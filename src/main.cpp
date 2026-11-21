@@ -11,8 +11,6 @@
 #include <FastLED.h>
 
 
-FASTLED_USING_NAMESPACE
-
 #define LED_PIN  D4
 #define TOUCH_PIN T3
 
@@ -21,11 +19,16 @@ FASTLED_USING_NAMESPACE
 
 #define BRIGHTNESS 255
 
+// untouched value is measured at startup; "pressed" is a fraction below it
+#define TOUCH_RATIO 75  // percent of the baseline
+
 #define NUM_LEDS 10
 
 
 // Define the array of leds
 CRGB leds[NUM_LEDS];
+
+touch_value_t touch_baseline = 0;
 
 void setup() {
     Serial.begin(115200);
@@ -33,7 +36,16 @@ void setup() {
     FastLED.setMaxPowerInVoltsAndMilliamps(5, 200);  // limit the current drawn by the LEDs
     FastLED.setBrightness(BRIGHTNESS);
     FastLED.addLeds<NEOPIXEL, LED_PIN>(leds, NUM_LEDS);  // GRB ordering is assumed
-    Serial.println("Magic wand started");
+
+    // calibrate the touch baseline (do not touch the foil during startup)
+    uint32_t sum = 0;
+    for (uint8_t i = 0; i < 16; i++) {
+        sum += touchRead(TOUCH_PIN);
+        delay(2);
+    }
+    touch_baseline = sum / 16;
+    Serial.print("Magic wand started, touch baseline: ");
+    Serial.println(touch_baseline);
 }
 
 
@@ -44,7 +56,7 @@ unsigned long button_released_after = 0;
 
 inline void handleTouching() {
   touch_value_t touchValue = touchRead(TOUCH_PIN);
-  if (touchValue < 50) {
+  if (touchValue < touch_baseline * TOUCH_RATIO / 100) {
     // button pressed
     if (!touching_since) {
       touching_since = millis();
@@ -74,7 +86,6 @@ void blast(unsigned long duration, uint8_t fadeBy) {
   }
 
   // have a white flash at the tip of the wand
-  uint8_t tip_start = ceil(NUM_LEDS / 4.0);
   for (uint8_t i = 0; i < 9; i++) {
     fadeToBlackBy(leds, NUM_LEDS, fadeBy);
     if (i % 2) {
