@@ -1,18 +1,28 @@
 /**
- * This project is a magical wand based on ESP32.
+ * This project is a magical wand.
  * The hardware is made of:
- * - a wemos compatible D1 mini 32;
+ * - a Seeed Studio XIAO nRF54LM20A Sense (originally: a Wemos D1 mini32)
  * - a strip piece of 10 WS2812B LEDs;
- * - a Li-ion 18650C battery + USB cable cut and plugged on it
+ * - a Li-ion battery wired to the XIAO battery pads (originally: an 18650
+ *   with a cut USB cable)
  * - some cardboard and glue
- * - some aluminium foil to create a capacitive button
+ * - the onboard USER button (originally: an aluminium foil capacitive button)
 */
 #include <Arduino.h>
+
+#ifdef ARDUINO_ARCH_NRF54L15CLEAN
+#include "fastled_shim.h"  // FastLED has no nRF54 support yet; see fastled_shim.h
+#else
 #include <FastLED.h>
+#endif
 
-
-#define LED_PIN  D4
+#ifdef ARDUINO_ARCH_NRF54L15CLEAN
+#define LED_PIN    PIN_D4      // P1.03 on the XIAO nRF54LM20A
+#define BUTTON_PIN PIN_BUTTON  // onboard USER button, active-low with pull-up
+#else
+#define LED_PIN   D4
 #define TOUCH_PIN T3
+#endif
 
 #define COLOR_ORDER GRB
 #define CHIPSET     WS2812B
@@ -28,7 +38,9 @@
 // Define the array of leds
 CRGB leds[NUM_LEDS];
 
+#ifndef ARDUINO_ARCH_NRF54L15CLEAN
 touch_value_t touch_baseline = 0;
+#endif
 
 void setup() {
     Serial.begin(115200);
@@ -37,6 +49,10 @@ void setup() {
     FastLED.setBrightness(BRIGHTNESS);
     FastLED.addLeds<NEOPIXEL, LED_PIN>(leds, NUM_LEDS);  // GRB ordering is assumed
 
+#ifdef ARDUINO_ARCH_NRF54L15CLEAN
+    pinMode(BUTTON_PIN, INPUT_PULLUP);  // onboard USER button is active-low
+    Serial.println("Magic wand started (XIAO nRF54LM20A)");
+#else
     // calibrate the touch baseline (do not touch the foil during startup)
     uint32_t sum = 0;
     for (uint8_t i = 0; i < 16; i++) {
@@ -46,6 +62,17 @@ void setup() {
     touch_baseline = sum / 16;
     Serial.print("Magic wand started, touch baseline: ");
     Serial.println(touch_baseline);
+#endif
+}
+
+
+// True while the wand is "touched" (nRF54: onboard button held; ESP32: foil).
+inline bool isTriggered() {
+#ifdef ARDUINO_ARCH_NRF54L15CLEAN
+    return digitalRead(BUTTON_PIN) == LOW;
+#else
+    return touchRead(TOUCH_PIN) < touch_baseline * TOUCH_RATIO / 100;
+#endif
 }
 
 
@@ -55,8 +82,7 @@ unsigned long touching_since = 0;
 unsigned long button_released_after = 0;
 
 inline void handleTouching() {
-  touch_value_t touchValue = touchRead(TOUCH_PIN);
-  if (touchValue < touch_baseline * TOUCH_RATIO / 100) {
+  if (isTriggered()) {
     // button pressed
     if (!touching_since) {
       touching_since = millis();

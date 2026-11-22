@@ -1,0 +1,3 @@
+[submodule "nrf54-arduino-core"]
+	path = nrf54-arduino-core
+	url = ./nrf54-arduino-core/
